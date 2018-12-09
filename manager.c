@@ -87,9 +87,12 @@ void serve_request(int sfd) {
             // update resources and queue
             r_available -= it->resources;
 
-            if (it == pr)
+            if (it == pr) {
                 pr = it->next;
-            else
+
+                // Update the highest priority
+                p_target = (pr != NULL) ? pr->priority : p_target;
+            } else
                 pred->next = it->next;
 
             // send positive reply of resources allocation to client
