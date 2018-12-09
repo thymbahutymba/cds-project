@@ -5,7 +5,8 @@
 
 // List of pending request that can not be satisfied
 struct PendingRequest {
-    struct sockaddr_un c_sender; // client that send request for resources
-    unsigned int resources;      // resources required by client
+    struct sockaddr_un *c_sender; // client that send request for resources
+    unsigned int resources;       // resources required by client
+    unsigned int priority;        // priority earned by the client
     struct PendingRequest *next;
 };

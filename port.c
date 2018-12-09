@@ -1,7 +1,7 @@
 #include "port.h"
 
 /*
- * Open local socket with given name
+ * Open local port with given name
  */
 int port_open(const char *name) {
     int sock; // id of socket that will be created
@@ -41,13 +41,14 @@ int port_open(const char *name) {
 /*
  * Send message over specified port with given name
  */
-int port_send(int sock, const char *msg, size_t size, const char *dst_name, struct sockaddr_un **dst) {
+int port_send(int sock, const char *msg, size_t size, const char *dst_name,
+              struct sockaddr_un **dst) {
     socklen_t len = sizeof(struct sockaddr_un);
     ssize_t b_sent;
 
     // create dst if not exists
     if (*dst == NULL && dst_name != NULL) {
-        *dst = (struct sockaddr_un *) malloc(sizeof(struct sockaddr_un));
+        *dst = (struct sockaddr_un *)malloc(sizeof(struct sockaddr_un));
 
         // set space taken by struct equal to 0
         memset(*dst, 0, sizeof(struct sockaddr_un));
@@ -58,7 +59,7 @@ int port_send(int sock, const char *msg, size_t size, const char *dst_name, stru
     }
 
     // send message over port
-    b_sent = sendto(sock, msg, size, 0, (struct sockaddr *)(*dst), len);
+    b_sent = sendto(sock, msg, size, 0, (struct sockaddr *)*dst, len);
     if (b_sent < 0) {
         perror("SendTo");
     }
@@ -69,12 +70,13 @@ int port_send(int sock, const char *msg, size_t size, const char *dst_name, stru
 /*
  * Receive message from socket and store it into buffer
  */
-int port_recv(int c_sfd, const char *buffer, size_t size, struct sockaddr_un **sender) {
+int port_recv(int c_sfd, const char *buf, size_t size,
+              struct sockaddr_un **sender) {
     ssize_t r_bytes; // bytes received from recvfrom
     socklen_t len = sizeof(struct sockaddr_un);
 
     r_bytes =
-        recvfrom(c_sfd, buffer, size, 0, (struct sockaddr *)*sender, &len);
+        recvfrom(c_sfd, (void *)buf, size, 0, (struct sockaddr *)*sender, &len);
     if (r_bytes < 0) {
         perror("RecvFrom");
         return -1;
