@@ -5,10 +5,8 @@
 int main(int argc, char *argv[]) {
     int sfd_client;
     struct sockaddr_un *manager = NULL;
-    ssize_t b_sent;
-    ssize_t b_recv;
     char msg[BUFFER_SIZE];
-    int error, n;
+    int error;
 
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <resources>\n", argv[0]);
@@ -23,14 +21,15 @@ int main(int argc, char *argv[]) {
     sfd_client = port_open(msg);
 
     // send request for resources allocation to the manager
-    b_sent = port_send(sfd_client, argv[1], BUFFER_SIZE, ALL_R, &manager);
+    port_send(sfd_client, argv[1], BUFFER_SIZE, ALL_R, &manager);
 
     // recv of answer for resources allocation
-    b_recv = port_recv(sfd_client, msg, BUFFER_SIZE, &manager);
+    port_recv(sfd_client, msg, BUFFER_SIZE, &manager);
+
+    // Deallocation of memory allocated for comunication
     free(manager);
     manager = NULL;
 
-    // if (sscanf(msg, "%i %i", &error, &n) && error == -1) {
     error = strtol(msg, NULL, 10);
     if (!error) {
         printf("Resource allocation successful\n");
@@ -44,10 +43,10 @@ int main(int argc, char *argv[]) {
     sleep(10);
 
     // deallocation of resources
-    b_sent = port_send(sfd_client, argv[1], BUFFER_SIZE, DEALL_R, &manager);
+    port_send(sfd_client, argv[1], BUFFER_SIZE, DEALL_R, &manager);
 
     // get reply of resources deallocation
-    b_sent = port_recv(sfd_client, msg, BUFFER_SIZE, &manager);
+    port_recv(sfd_client, msg, BUFFER_SIZE, &manager);
     if (!atoi(msg))
         printf("Resource deallocation successful\n");
 
