@@ -4,7 +4,10 @@ struct PendingRequest *pr = NULL;
 unsigned int r_available = N;
 unsigned int resources[N];
 
-void send_resource(int sfd, int n_res, struct sockaddr_un *sender, int c_id) {
+// socket file descriptor for allocate and deallocate request
+int sfd_all, sfd_deall;
+
+void send_resource(int n_res, struct sockaddr_un *sender, int c_id) {
     int index;
     char r_name[BUFFER_SIZE];   // Name of the resource to send to the client
     char response[BUFFER_SIZE]; // Response message from the client
@@ -21,10 +24,10 @@ void send_resource(int sfd, int n_res, struct sockaddr_un *sender, int c_id) {
 
         // Send resource name to client
         sprintf(r_name, R_NAME, index);
-        port_send(sfd, r_name, strlen(r_name), NULL, &sender);
+        port_send(sfd_all, r_name, strlen(r_name), NULL, &sender);
 
         // Receive response from client
-        port_recv(sfd, response, BUFFER_SIZE, &sender);
+        port_recv(sfd_all, response, BUFFER_SIZE, &sender);
 
         error = strtol(response, NULL, 10);
         if (error) {
@@ -34,7 +37,8 @@ void send_resource(int sfd, int n_res, struct sockaddr_un *sender, int c_id) {
     }
 }
 
-int ex_poll(int sfd_all, int sfd_deall) {
+/* Pools over allocation and deallocation requests */
+int ex_poll() {
     int c_sfd; // socker file descriptor for request received by client
     ssize_t res;
     struct pollfd guards[2]; // file descriptor to be monitored from poll
@@ -64,7 +68,7 @@ int ex_poll(int sfd_all, int sfd_deall) {
 /* Create new request and return its pointer */
 struct PendingRequest *create_request(struct sockaddr_un *sender,
                                       unsigned int r, unsigned int p,
-                                      unsigned int c_id, int sfd) {
+                                      unsigned int c_id) {
     struct PendingRequest *nr;
 
     nr = (struct PendingRequest *)malloc(sizeof(struct PendingRequest));
@@ -72,7 +76,6 @@ struct PendingRequest *create_request(struct sockaddr_un *sender,
     nr->resources = r;
     nr->priority = p;
     nr->client_id = c_id;
-    nr->sfd = sfd;
     nr->next = NULL;
 
     return nr;
@@ -80,13 +83,13 @@ struct PendingRequest *create_request(struct sockaddr_un *sender,
 
 /* Inserts the request in the pending queue */
 void insert_request(struct sockaddr_un *sender, unsigned int r,
-                    unsigned int c_id, int sfd) {
+                    unsigned int c_id) {
     struct PendingRequest *it;
 
     // there are no pending requests yet
     if (pr == NULL) {
         // creation of new pending request with lowest priority (0)
-        pr = create_request(sender, r, 0, c_id, sfd);
+        pr = create_request(sender, r, 0, c_id);
         return;
     }
 
@@ -95,7 +98,7 @@ void insert_request(struct sockaddr_un *sender, unsigned int r,
         ;
 
     // Inserts request as last with the lowest priority (0)
-    it->next = create_request(sender, r, 0, c_id, sfd);
+    it->next = create_request(sender, r, 0, c_id);
 }
 
 /* Serves pending requests if there are enough resources available */
@@ -130,9 +133,9 @@ void serve_request() {
                 pred->next = it->next;
 
             // send positive reply of resources allocation to the client
-            port_send(it->sfd, "0", 1, NULL, &(it->c_sender));
+            port_send(sfd_all, "0", 1, NULL, &(it->c_sender));
 
-            send_resource(it->sfd, it->resources, it->c_sender, it->client_id);
+            send_resource(it->resources, it->c_sender, it->client_id);
 
             printf("Allocation of %i resources successful.\n", it->resources);
 
@@ -150,26 +153,26 @@ void serve_request() {
             it->priority++;
 }
 
-void handle_allocation(int sfd, unsigned int r, struct sockaddr_un *sender,
+void handle_allocation(unsigned int r, struct sockaddr_un *sender,
                        unsigned int c_id) {
     // available resources can handle request from client
     if (r <= r_available) {
         r_available -= r;
 
         // send positive reply of resources allocation to client
-        port_send(sfd, "0", 1, NULL, &sender);
+        port_send(sfd_all, "0", 1, NULL, &sender);
 
         // Send resource id to client
-        send_resource(sfd, r, sender, c_id);
+        send_resource(r, sender, c_id);
 
         printf("Allocation of %i resources successful.\n", r);
     } else {
         // insert request to queue
-        insert_request(sender, r, c_id, sfd);
+        insert_request(sender, r, c_id);
     }
 }
 
-void handle_deallocation(int sfd, unsigned int r, struct sockaddr_un *sender,
+void handle_deallocation(unsigned int r, struct sockaddr_un *sender,
                          unsigned int c_id) {
     size_t index;
 
@@ -182,7 +185,7 @@ void handle_deallocation(int sfd, unsigned int r, struct sockaddr_un *sender,
     }
 
     // send positive reply of resources deallocation
-    port_send(sfd, "0", 1, NULL, &sender);
+    port_send(sfd_deall, "0", 1, NULL, &sender);
     printf("Deallocation of %i resources successful.\n", r);
 
     serve_request();
@@ -190,8 +193,6 @@ void handle_deallocation(int sfd, unsigned int r, struct sockaddr_un *sender,
 }
 
 int main() {
-    // socket file descriptor for allocate and deallocate request
-    int sfd_all, sfd_deall;
     char buf[BUFFER_SIZE]; // buffer for receiving message
     char msg[BUFFER_SIZE]; // buffer for sending message
     unsigned int res;      // resources request received from client
@@ -213,7 +214,7 @@ int main() {
             (struct sockaddr_un *)malloc(sizeof(struct sockaddr_un));
 
         // poll over guards and get file descriptor of incoming requests
-        c_sfd = ex_poll(sfd_all, sfd_deall);
+        c_sfd = ex_poll();
 
         // recv message from given socket file descriptor
         memset(buf, 0, BUFFER_SIZE);
@@ -235,9 +236,9 @@ int main() {
         printf("%s\n", msg);
 
         if (c_sfd == sfd_all)
-            handle_allocation(c_sfd, res, c_sender, c_id);
+            handle_allocation(res, c_sender, c_id);
         else {
-            handle_deallocation(c_sfd, res, c_sender, c_id);
+            handle_deallocation(res, c_sender, c_id);
         }
     }
 

@@ -9,6 +9,5 @@ struct PendingRequest {
     unsigned int resources;       // resources required from client
     unsigned int priority;        // priority earned from client
     unsigned int client_id;
-    int sfd; // socket file descriptor where the request arrives
     struct PendingRequest *next;
 };
