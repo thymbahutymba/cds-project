@@ -2,6 +2,37 @@
 
 struct PendingRequest *pr = NULL;
 unsigned int r_available = N;
+unsigned int resources[N];
+
+void send_resource(int sfd, int n_res, struct sockaddr_un *sender, int c_id) {
+    int index;
+    char r_name[BUFFER_SIZE];   // Name of the resource to send to the client
+    char response[BUFFER_SIZE]; // Response message from the client
+    int error;                  // Error received from client
+
+    // Iterate over the number of resources requested
+    for (; n_res; --n_res) {
+
+        // Find the first resources available
+        for (index = 0; index < N && resources[index]; index++)
+            ;
+
+        resources[index] = c_id;
+
+        // Send resource name to client
+        sprintf(r_name, R_NAME, index);
+        port_send(sfd, r_name, strlen(r_name), NULL, &sender);
+
+        // Receive response from client
+        port_recv(sfd, response, BUFFER_SIZE, &sender);
+
+        error = strtol(response, NULL, 10);
+        if (error) {
+            fprintf(stderr, "Error code: %d\n", error);
+            exit(1);
+        }
+    }
+}
 
 int ex_poll(int sfd_all, int sfd_deall) {
     int c_sfd; // socker file descriptor for request received by client
@@ -30,27 +61,32 @@ int ex_poll(int sfd_all, int sfd_deall) {
     return c_sfd;
 }
 
-// Create new request and return its pointer
+/* Create new request and return its pointer */
 struct PendingRequest *create_request(struct sockaddr_un *sender,
-                                      unsigned int r, unsigned int p) {
+                                      unsigned int r, unsigned int p,
+                                      unsigned int c_id, int sfd) {
     struct PendingRequest *nr;
 
     nr = (struct PendingRequest *)malloc(sizeof(struct PendingRequest));
     nr->c_sender = sender;
     nr->resources = r;
     nr->priority = p;
+    nr->client_id = c_id;
+    nr->sfd = sfd;
     nr->next = NULL;
 
     return nr;
 }
 
-void insert_request(struct sockaddr_un *sender, unsigned int r) {
+/* Inserts the request in the pending queue */
+void insert_request(struct sockaddr_un *sender, unsigned int r,
+                    unsigned int c_id, int sfd) {
     struct PendingRequest *it;
 
-    // there are no pending requests
+    // there are no pending requests yet
     if (pr == NULL) {
         // creation of new pending request with lowest priority (0)
-        pr = create_request(sender, r, 0);
+        pr = create_request(sender, r, 0, c_id, sfd);
         return;
     }
 
@@ -58,14 +94,12 @@ void insert_request(struct sockaddr_un *sender, unsigned int r) {
     for (it = pr; it->next != NULL; it = it->next)
         ;
 
-    if (!it->priority) {
-        it->next = create_request(sender, r, 0);
-    } else {
-        it->next = create_request(sender, r, (it->priority - 1));
-    }
+    // Inserts request as last with the lowest priority (0)
+    it->next = create_request(sender, r, 0, c_id, sfd);
 }
 
-void serve_request(int sfd) {
+/* Serves pending requests if there are enough resources available */
+void serve_request() {
     struct PendingRequest *it, *pred;
     unsigned int p_target; // target priority of request that could be served
     const unsigned int old_r = r_available; // resources that were be available
@@ -95,46 +129,63 @@ void serve_request(int sfd) {
             } else
                 pred->next = it->next;
 
-            // send positive reply of resources allocation to client
-            port_send(sfd, "0", 1, NULL, &(it->c_sender));
+            // send positive reply of resources allocation to the client
+            port_send(it->sfd, "0", 1, NULL, &(it->c_sender));
+
+            send_resource(it->sfd, it->resources, it->c_sender, it->client_id);
+
             printf("Allocation of %i resources successful.\n", it->resources);
 
-            // deallocation of allocated memory
+            // deallocation of memory previously allocated
             free(it->c_sender);
             free(it);
         }
     }
 
+    // If a client has been served all queued clients have their priority
+    // increased
     if (old_r != r_available)
         // update priority for each element in the queue
         for (it = pr; it != NULL; it = it->next)
             it->priority++;
 }
 
-void handle_allocation(int sfd, unsigned int r, struct sockaddr_un *sender) {
+void handle_allocation(int sfd, unsigned int r, struct sockaddr_un *sender,
+                       unsigned int c_id) {
     // available resources can handle request from client
     if (r <= r_available) {
         r_available -= r;
 
         // send positive reply of resources allocation to client
         port_send(sfd, "0", 1, NULL, &sender);
+
+        // Send resource id to client
+        send_resource(sfd, r, sender, c_id);
+
         printf("Allocation of %i resources successful.\n", r);
     } else {
         // insert request to queue
-        insert_request(sender, r);
+        insert_request(sender, r, c_id, sfd);
     }
 }
 
-void handle_deallocation(int sfd, unsigned int r, struct sockaddr_un *sender) {
+void handle_deallocation(int sfd, unsigned int r, struct sockaddr_un *sender,
+                         unsigned int c_id) {
+    size_t index;
 
     // update resources available
     r_available += r;
+
+    // Deallocation of resources previously allocated to the client
+    for (index = 0; index < N; ++index) {
+        resources[index] = (resources[index] == c_id) ? 0 : resources[index];
+    }
 
     // send positive reply of resources deallocation
     port_send(sfd, "0", 1, NULL, &sender);
     printf("Deallocation of %i resources successful.\n", r);
 
-    serve_request(sfd);
+    serve_request();
     free(sender);
 }
 
@@ -144,6 +195,7 @@ int main() {
     char buf[BUFFER_SIZE]; // buffer for receiving message
     char msg[BUFFER_SIZE]; // buffer for sending message
     unsigned int res;      // resources request received from client
+    unsigned int c_id;     // client id that make request
     int c_sfd;
     char *dbg[] = {"Request for allocation %i resources.",
                    "Request for deallocation %i resources."};
@@ -167,10 +219,10 @@ int main() {
         memset(buf, 0, BUFFER_SIZE);
         port_recv(c_sfd, buf, BUFFER_SIZE, &c_sender);
 
-        // get number of resources requested by client
-        res = atoi(buf);
+        // get the client id and number of resources requested from it
+        sscanf(buf, REQ_FORM, &c_id, &res);
 
-        // the number of resources requested could exceed the max available from
+        // Number of resources requested could exceed the max available from
         // manager
         if (res > N) {
             port_send(c_sfd, "-1", 2, NULL, &c_sender);
@@ -178,13 +230,14 @@ int main() {
             continue;
         }
 
+        // Print debug message to stdout
         sprintf(msg, dbg[c_sfd == sfd_deall], res);
         printf("%s\n", msg);
 
         if (c_sfd == sfd_all)
-            handle_allocation(c_sfd, res, c_sender);
+            handle_allocation(c_sfd, res, c_sender, c_id);
         else {
-            handle_deallocation(c_sfd, res, c_sender);
+            handle_deallocation(c_sfd, res, c_sender, c_id);
         }
     }
 

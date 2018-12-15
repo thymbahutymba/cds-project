@@ -1,6 +1,6 @@
 #!/bin/sh
 
-'
+: '
 Start new client with 2 resources after first deallocation (10).
 After the deallocation of two clients that had required 7 and 3 resources will 
 be allocated two other client that require 5 and 3 resource, even if there are 

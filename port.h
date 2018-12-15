@@ -13,7 +13,13 @@
 #define DEALL_R ("/tmp/deallocate_req")
 
 // client port name
-#define C_PNAME ("/tmp/client_%d_r%u")
+#define C_PNAME ("/tmp/client_%d")
+
+// resource port name
+#define R_NAME ("/tmp/resource_%u")
+
+// String that define request format send from client (c_id: r)
+#define REQ_FORM ("%u: %u")
 
 int port_open(const char *);
 int port_send(int, const char *, size_t, const char *, struct sockaddr_un **);
