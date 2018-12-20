@@ -1,0 +1,56 @@
+Project 1
+
+In this project I make the assumption that there are no clients that could 
+disconnect unless it releases the previously requested resources.
+
+If a client requests more than N=10 resources, that is the full set of resources 
+available from manager, an error is returned to the client.
+
+The starvation policy implemented use a time order queue where are inserted all
+pending requests that can't be satisfied when it arrives. All pending request 
+have a priority that at the moment that it arrives is equal to 0, the lowest one.
+Once a client releases resources that have been assigned to it by the manager, 
+pending requests may be served if there are enough available resources. If a 
+client receives the resources by the manager all other clients in the pending 
+queue have it's priority increased by 1.
+The criterion for which resources are assigned to the client as long as they are 
+available is that the client must have the highest priority in the queue and 
+must be prior than others that could be satisfied.
+
+For the project testing is provided a script that use tmux. This script starts 
+the manager, six clients and a bash shell. For each client started, the required
+resources are in the following order 10, 7, 5, 3, 3, 9. This means that the
+first client asks for 10 resources, the second one asks for 7 resources and so 
+on. The first client got the resources and all others clients have been inserted 
+in the manager queue. Once the first client releases the resources will be 
+allocated to the second client that requires 7 and to the fourth client that 
+asks for 3 resources. Once that are allocated the resources to both the second 
+and fourth clients all others clients in the queue have it's priority increased 
+by 1. These clients will be served in the future before the new requests that 
+may come from now on.
+
+Q: queue, P: priority
+Es: 10, 7, 5, 3, 3, 9 -> first client served
+Q: 7, 5, 3, 3, 9
+P: 0, 0, 0, 0, 0
+
+first client release the resources -> second and fourth client served
+Q: 5, 3, 9
+P: 1, 1, 1
+
+new request of 2 resources
+Q: 5, 3, 9, 2
+P: 1, 1, 1, 0
+
+second and fourth client release the resources -> third and fifth served, the 
+last one won't be served due to preserve the priority achieved by the sixth client
+
+Q: 9, 2
+P: 1, 0
+
+after the release of third and fifth clients will be served the sixth client and
+after the release of this one will be served the seventh client.
+
+This example may be reproduced with a pending request of 1 resource instead of 2
+and this request will be served immediately after the resource assignment to the
+penultimate client that asks for 9 resources.

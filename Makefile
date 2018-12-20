@@ -1,5 +1,4 @@
 CC = gcc
-LDFLAGS = -pthread
 CFLAGS = -Wall -Wextra -pedantic
 
 all: manager client
@@ -9,4 +8,4 @@ client: client.o port.o
 
 clean:
 	rm *.o
-	rm manager client	
+	rm manager client
