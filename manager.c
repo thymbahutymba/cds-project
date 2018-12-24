@@ -156,7 +156,7 @@ void serve_request() {
 void handle_allocation(unsigned int r, struct sockaddr_un *sender,
                        unsigned int c_id) {
     // available resources can handle request from client
-    if (r <= r_available) {
+    if (pr == NULL && r <= r_available) {
         r_available -= r;
 
         // send positive reply of resources allocation to client
