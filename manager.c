@@ -116,7 +116,7 @@ void serve_request() {
 
     // find element at highest priority that can be served with available
     // resources
-    for (it = pr; it != NULL && it->priority == p_target;
+    for (it = pr, pred = pr; it != NULL && it->priority == p_target;
          pred = it, it = it->next) {
 
         // found element at highest priority that could be served
@@ -126,6 +126,7 @@ void serve_request() {
 
             if (it == pr) {
                 pr = it->next;
+                pred = pr;
 
                 // Update the highest priority
                 p_target = (pr != NULL) ? pr->priority : p_target;
@@ -142,6 +143,10 @@ void serve_request() {
             // deallocation of memory previously allocated
             free(it->c_sender);
             free(it);
+
+            it = pred;
+            if (it == NULL)
+                break;
         }
     }
 
@@ -164,7 +169,7 @@ void handle_allocation(unsigned int r, struct sockaddr_un *sender,
 
         // Send resource id to client
         send_resource(r, sender, c_id);
-
+        free(sender);
         printf("Allocation of %i resources successful.\n", r);
     } else {
         // insert request to queue
@@ -209,12 +214,12 @@ int main() {
     }
 
     while (1) {
+        // poll over guards and get file descriptor of incoming requests
+        c_sfd = ex_poll();
+
         // client that send the message
         struct sockaddr_un *c_sender =
             (struct sockaddr_un *)malloc(sizeof(struct sockaddr_un));
-
-        // poll over guards and get file descriptor of incoming requests
-        c_sfd = ex_poll();
 
         // recv message from given socket file descriptor
         memset(buf, 0, BUFFER_SIZE);
